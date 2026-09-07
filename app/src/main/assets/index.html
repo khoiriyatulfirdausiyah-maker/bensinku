@@ -455,79 +455,183 @@ function render(){const v=active(); const empty=!v; document.getElementById('emp
   lastPrice.textContent=v.priceUpdated?'Diperbarui '+new Date(v.priceUpdated).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'Belum diperbarui';
 const manualOdos=(v.odoUpdates||[]).map(x=>+x.odo||0);
 
-odo.textContent=fmt(
-  Math.max(
-    logs.length ? Math.max(...logs.map(x=>+x.odo||0)) : 0,
-    manualOdos.length ? Math.max(...manualOdos) : 0
-  )
+const currentOdo=Math.max(
+  logs.length ? Math.max(...logs.map(x=>+x.odo||0)) : 0,
+  manualOdos.length ? Math.max(...manualOdos) : 0
 );
 
+odo.textContent=fmt(currentOdo);
+
+
+/* =========================
+   EFISIENSI & BIAYA PER KM
+   ========================= */
+
 const validRows=rows.filter(r=>r.eff>0 && r.dist>0);
-const recent=validRows[0];
-const previous=validRows[1];
 
-const effBadgeEl=document.getElementById('effBadge');
-const costBadgeEl=document.getElementById('costKmBadge');
+const lastFill=logs[0]||null;
 
-eff.textContent=recent ? dec(recent.eff) : '—';
+/* Cari update odometer yang lebih besar
+   dari odometer saat isi BBM terakhir */
+const latestManualOdo=lastFill
+  ? (v.odoUpdates||[])
+      .filter(x=>(+x.odo||0)>(+lastFill.odo||0))
+      .sort((a,b)=>(+b.odo||0)-(+a.odo||0))[0]
+  : null;
 
-const recentCost=recent ? recent.amount/recent.dist : 0;
-costKm.textContent=recent ? fmt(Math.round(recentCost)) : '—';
+let recent=null;
+let previous=null;
 
 
-/* ===== EFISIENSI TERAKHIR ===== */
+/* Kalau ada update odometer setelah isi BBM terakhir,
+   gunakan itu untuk menghitung pemakaian terbaru */
+if(
+  lastFill &&
+  latestManualOdo &&
+  +lastFill.liters>0
+){
+  const liveDist=
+    (+latestManualOdo.odo||0) -
+    (+lastFill.odo||0);
 
-if(!recent){
-  effBadgeEl.textContent='Belum cukup data';
-  effBadgeEl.className='badge neutral';
+  if(liveDist>0){
+    recent={
+      ...lastFill,
+      dist:liveDist,
+      eff:liveDist/(+lastFill.liters),
+      fromManualOdo:true
+    };
+  }
 
-}else if(!previous){
-  effBadgeEl.textContent='Belum ada pembanding';
-  effBadgeEl.className='badge neutral';
+  /* Pembanding memakai efisiensi sebelumnya */
+  previous=validRows[0]||null;
 
 }else{
-  const effChange=((recent.eff-previous.eff)/previous.eff)*100;
+  /* Kalau belum ada update odo,
+     pakai perhitungan isi BBM seperti sebelumnya */
+  recent=validRows[0]||null;
+  previous=validRows[1]||null;
+}
 
-  if(Math.abs(effChange)<0.5){
-    effBadgeEl.textContent='→ Stabil';
+
+/* =========================
+   ANGKA UTAMA
+   ========================= */
+
+eff.textContent=
+  recent
+    ? dec(recent.eff)
+    : '—';
+
+const recentCost=
+  recent && recent.dist>0
+    ? (+recent.amount||0)/recent.dist
+    : 0;
+
+costKm.textContent=
+  recentCost
+    ? fmt(Math.round(recentCost))
+    : '—';
+
+
+/* =========================
+   BADGE EFISIENSI
+   ========================= */
+
+const effBadgeEl=document.getElementById('effBadge');
+
+if(effBadgeEl){
+
+  if(!recent){
+    effBadgeEl.textContent='Belum cukup data';
     effBadgeEl.className='badge neutral';
 
-  }else if(effChange>0){
-    effBadgeEl.textContent=`↗ Lebih efisien ${Math.round(effChange)}%`;
-    effBadgeEl.className='badge';
+  }else if(!previous){
+    effBadgeEl.textContent=
+      recent.fromManualOdo
+        ? 'Dari update odometer'
+        : 'Belum ada pembanding';
+
+    effBadgeEl.className='badge neutral';
 
   }else{
-    effBadgeEl.textContent=`↘ Turun ${Math.round(Math.abs(effChange))}%`;
-    effBadgeEl.className='badge bad';
+
+    const effChange=
+      ((recent.eff-previous.eff)/previous.eff)*100;
+
+    if(Math.abs(effChange)<0.5){
+
+      effBadgeEl.textContent='→ Stabil';
+      effBadgeEl.className='badge neutral';
+
+    }else if(effChange>0){
+
+      effBadgeEl.textContent=
+        `↗ Lebih efisien ${Math.round(effChange)}%`;
+
+      effBadgeEl.className='badge';
+
+    }else{
+
+      effBadgeEl.textContent=
+        `↘ Turun ${Math.round(Math.abs(effChange))}%`;
+
+      effBadgeEl.className='badge bad';
+    }
   }
 }
 
 
-/* ===== BIAYA PER KM ===== */
+/* =========================
+   BADGE BIAYA PER KM
+   ========================= */
 
-if(!recent){
-  costBadgeEl.textContent='Belum cukup data';
-  costBadgeEl.className='badge neutral';
+const costBadgeEl=
+  document.getElementById('costKmBadge');
 
-}else if(!previous){
-  costBadgeEl.textContent='Belum ada pembanding';
-  costBadgeEl.className='badge neutral';
+if(costBadgeEl){
 
-}else{
-  const previousCost=previous.amount/previous.dist;
-  const costChange=((recentCost-previousCost)/previousCost)*100;
+  if(!recentCost){
 
-  if(Math.abs(costChange)<0.5){
-    costBadgeEl.textContent='→ Stabil';
+    costBadgeEl.textContent='Belum cukup data';
     costBadgeEl.className='badge neutral';
 
-  }else if(costChange<0){
-    costBadgeEl.textContent=`↓ Lebih hemat ${Math.round(Math.abs(costChange))}%`;
-    costBadgeEl.className='badge';
+  }else if(!previous || !previous.dist){
+
+    costBadgeEl.textContent=
+      recent && recent.fromManualOdo
+        ? 'Dari update odometer'
+        : 'Belum ada pembanding';
+
+    costBadgeEl.className='badge neutral';
 
   }else{
-    costBadgeEl.textContent=`↑ Lebih mahal ${Math.round(costChange)}%`;
-    costBadgeEl.className='badge bad';
+
+    const previousCost=
+      (+previous.amount||0)/previous.dist;
+
+    const costChange=
+      ((recentCost-previousCost)/previousCost)*100;
+
+    if(Math.abs(costChange)<0.5){
+
+      costBadgeEl.textContent='→ Stabil';
+      costBadgeEl.className='badge neutral';
+
+    }else if(costChange<0){
+
+      costBadgeEl.textContent=
+        `↓ Lebih hemat ${Math.round(Math.abs(costChange))}%`;
+
+      costBadgeEl.className='badge';
+
+    }else{
+
+      costBadgeEl.textContent=
+        `↑ Lebih mahal ${Math.round(costChange)}%`;
+
+      costBadgeEl.className='badge bad';
+    }
   }
 }
   const now=new Date(); const mlogs=logs.filter(x=>{const d=new Date(x.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()}); const spend=mlogs.reduce((s,x)=>s+(+x.amount||0),0); monthSpend.textContent=fmt(spend); monthCount.textContent=mlogs.length;
