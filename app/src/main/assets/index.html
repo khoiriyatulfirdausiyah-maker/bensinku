@@ -53,7 +53,8 @@ button,input,select{font:inherit}
 .refreshBtn{width:42px;height:42px;border:1px solid #ffd3cd;background:#fff3f1;color:#ef3025;border-radius:13px;font-size:22px;font-weight:900;display:grid;place-items:center;padding:0}
 .refreshBtn.loading{animation:spin .7s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .badge{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 12px;border-radius:999px;background:#e9f7e5;color:#23962d;font-size:12px;font-weight:800}
-.badge.down{background:#e9f7e5;color:#1ea637}
+.badge.bad{background:#fff0ee;color:#df4338}
+.badge.neutral{background:#eef2f8;color:#68738c}
 .cta{background:linear-gradient(145deg,#ff9504,#ff7c00);position:relative;color:#fff;border:0;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
 .ctaTop{display:flex;align-items:center;gap:10px}.plus{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#ff8900;font-size:31px;font-weight:900;line-height:1}
 .ctaTitle{font-size:24px;font-weight:900;letter-spacing:-.6px}
@@ -211,7 +212,7 @@ button,input,select{font:inherit}
             <div class="label">Efisiensi Terakhir</div>
           </div>
           <div class="value greenTxt"><span id="eff">52,3</span> <small>km/L</small></div>
-          <div class="badge">↗ Bagus sekali!</div>
+          <div id="effBadge" class="badge neutral">Belum ada pembanding</div>
         </div>
 
         <div class="card">
@@ -231,7 +232,7 @@ button,input,select{font:inherit}
             <div class="label">Biaya per KM</div>
           </div>
           <div class="value greenTxt">Rp <span id="costKm">193</span> <small>/km</small></div>
-          <div class="badge down">↓ Lebih hemat 8%</div>
+          <div id="costKmBadge" class="badge neutral">Belum ada pembanding</div>
         </div>
 
         <button class="card cta" onclick="openFuel()">
@@ -442,7 +443,83 @@ function render(){const v=active(); const empty=!v; document.getElementById('emp
   const logs=[...(v.logs||[])].sort((a,b)=> new Date(b.date)-new Date(a.date) || (+b.id)-(+a.id)); const rows=enrich(logs);
   homeNick.textContent=v.nick||'Tanpa nama'; homeModel.textContent=v.model||'-'; homePlate.textContent=v.plate||'Tanpa plat'; homePhoto.src=v.photo||'img/default-bike.png'; fuelName.textContent=v.fuel||'BBM'; fuelPrice.textContent=fmt(v.price||0); manualPrice.value=v.price||''; region.value=db.region||'Jawa Timur'; const pname=(db.profile&&db.profile.name)?db.profile.name:''; document.querySelector('.hello').textContent = pname ? `Halo, ${pname} 👋` : 'Halo, 👋';
   lastPrice.textContent=v.priceUpdated?'Diperbarui '+new Date(v.priceUpdated).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'Belum diperbarui';
-  const manualOdos=(v.odoUpdates||[]).map(x=>+x.odo||0); odo.textContent=fmt(Math.max(logs.length?Math.max(...logs.map(x=>+x.odo||0)):0,manualOdos.length?Math.max(...manualOdos):0)); const recent=rows.find(r=>r.eff>0); eff.textContent=recent?dec(recent.eff):'—'; costKm.textContent=recent&&recent.dist>0?fmt(Math.round(recent.amount/recent.dist)):'—';
+const manualOdos=(v.odoUpdates||[]).map(x=>+x.odo||0);
+
+odo.textContent=fmt(
+  Math.max(
+    logs.length ? Math.max(...logs.map(x=>+x.odo||0)) : 0,
+    manualOdos.length ? Math.max(...manualOdos) : 0
+  )
+);
+
+const validRows=rows.filter(r=>r.eff>0 && r.dist>0);
+const recent=validRows[0];
+const previous=validRows[1];
+
+const effBadgeEl=document.getElementById('effBadge');
+const costBadgeEl=document.getElementById('costKmBadge');
+
+eff.textContent=recent ? dec(recent.eff) : '—';
+
+const recentCost=recent ? recent.amount/recent.dist : 0;
+costKm.textContent=recent ? fmt(Math.round(recentCost)) : '—';
+
+
+/* ===== EFISIENSI TERAKHIR ===== */
+
+if(!recent){
+  effBadgeEl.textContent='Belum cukup data';
+  effBadgeEl.className='badge neutral';
+
+}else if(!previous){
+  effBadgeEl.textContent='Belum ada pembanding';
+  effBadgeEl.className='badge neutral';
+
+}else{
+  const effChange=((recent.eff-previous.eff)/previous.eff)*100;
+
+  if(Math.abs(effChange)<0.5){
+    effBadgeEl.textContent='→ Stabil';
+    effBadgeEl.className='badge neutral';
+
+  }else if(effChange>0){
+    effBadgeEl.textContent=`↗ Lebih efisien ${Math.round(effChange)}%`;
+    effBadgeEl.className='badge';
+
+  }else{
+    effBadgeEl.textContent=`↘ Turun ${Math.round(Math.abs(effChange))}%`;
+    effBadgeEl.className='badge bad';
+  }
+}
+
+
+/* ===== BIAYA PER KM ===== */
+
+if(!recent){
+  costBadgeEl.textContent='Belum cukup data';
+  costBadgeEl.className='badge neutral';
+
+}else if(!previous){
+  costBadgeEl.textContent='Belum ada pembanding';
+  costBadgeEl.className='badge neutral';
+
+}else{
+  const previousCost=previous.amount/previous.dist;
+  const costChange=((recentCost-previousCost)/previousCost)*100;
+
+  if(Math.abs(costChange)<0.5){
+    costBadgeEl.textContent='→ Stabil';
+    costBadgeEl.className='badge neutral';
+
+  }else if(costChange<0){
+    costBadgeEl.textContent=`↓ Lebih hemat ${Math.round(Math.abs(costChange))}%`;
+    costBadgeEl.className='badge';
+
+  }else{
+    costBadgeEl.textContent=`↑ Lebih mahal ${Math.round(costChange)}%`;
+    costBadgeEl.className='badge bad';
+  }
+}
   const now=new Date(); const mlogs=logs.filter(x=>{const d=new Date(x.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()}); const spend=mlogs.reduce((s,x)=>s+(+x.amount||0),0); monthSpend.textContent=fmt(spend); monthCount.textContent=mlogs.length;
   recentRows.innerHTML=rows.slice(0,2).map(rowHtml).join('')||'<div class="empty">Belum ada pengisian. Tap <b>Isi BBM</b> untuk mulai.</div>'; historyList.innerHTML=rows.map(x=>`<div class="historyBox" style="margin-top:0;margin-bottom:12px">${rowHtml(x)}</div>`).join('')||'<div class="whiteCard">Belum ada riwayat.</div>';
   const effs=rows.map(r=>r.eff).filter(Boolean); const avg=effs.length?effs.reduce((a,b)=>a+b,0)/effs.length:0; avgEff.textContent=avg?`${dec(avg)} km/L`:'—'; effBar.style.width=Math.min(100,(avg/70)*100)+'%'; totalSpend.textContent=fmt(logs.reduce((s,x)=>s+(+x.amount||0),0)); totalLiters.textContent=dec(logs.reduce((s,x)=>s+(+x.liters||0),0));
