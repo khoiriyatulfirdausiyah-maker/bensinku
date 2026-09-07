@@ -418,7 +418,45 @@ button,input,select{font:inherit}
   </div>
 </div>
 
-<div id="odoModal" class="modal"><div class="sheet"><div class="sheetHead"><div class="sheetTitle">Update Odometer</div><button class="closeBtn" onclick="closeModal('odoModal')">×</button></div><div class="field"><label>Kendaraan</label><select id="odoVehicle"></select></div><div class="field"><label>Odometer sekarang (km)</label><input id="odoNow" type="number" placeholder="Contoh: 12.845"></div><div class="field"><label>Tanggal</label><input id="odoDate" type="date"></div><button class="primary" onclick="saveOdoUpdate()">Simpan odometer</button></div></div>
+<div id="odoModal" class="modal">
+  <div class="sheet">
+
+    <div class="sheetHead">
+      <div class="sheetTitle">Update Odometer</div>
+      <button class="closeBtn" onclick="closeModal('odoModal')">×</button>
+    </div>
+
+    <input id="odoEditId" type="hidden">
+
+    <div class="field">
+      <label>Kendaraan</label>
+      <select id="odoVehicle" onchange="renderOdoUpdates()"></select>
+    </div>
+
+    <div class="field">
+      <label>Odometer sekarang (km)</label>
+      <input id="odoNow" type="number" placeholder="Contoh: 12.845">
+    </div>
+
+    <div class="field">
+      <label>Tanggal</label>
+      <input id="odoDate" type="date">
+    </div>
+
+    <button id="odoSaveBtn" class="primary" onclick="saveOdoUpdate()">
+      Simpan odometer
+    </button>
+
+    <div style="margin-top:22px">
+      <div style="font-size:16px;font-weight:900;color:#17337f;margin-bottom:10px">
+        Riwayat Update Odometer
+      </div>
+
+      <div id="odoUpdateList"></div>
+    </div>
+
+  </div>
+</div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -672,8 +710,192 @@ function openNotif(){loadNotificationSettings();document.getElementById('notifMo
 function toggleNotifCard(type){const map={fuel:['notifFuel','notifFuelCard'],price:['notifPrice','notifPriceCard'],monthly:['notifMonthly','notifMonthlyCard']};const [input,card]=map[type];document.getElementById(card).classList.toggle('on',document.getElementById(input).checked);if(type==='fuel')renderPrediction()}
 function loadNotificationSettings(){const n=db.notifications||{};const f=n.fuel||{};const p=n.price||{};const m=n.monthly||{};notifFuel.checked=!!f.enabled;notifFuelTime.value=f.time||'08:00';notifFuelThreshold.value=String(f.thresholdKm||30);notifFuelVehicle.innerHTML=db.vehicles.map(v=>`<option value="${v.id}">${esc(v.nick)} — ${esc(v.model)}</option>`).join('');notifFuelVehicle.value=f.vehicleId||db.activeId||db.vehicles[0]?.id||'';notifFuelVehicle.onchange=renderPrediction;notifFuelThreshold.onchange=renderPrediction;notifPrice.checked=!!p.enabled;notifPriceTime.value=p.time||'08:00';notifPriceFreq.value=p.freq||'weekly';notifMonthly.checked=!!m.enabled;notifMonthlyTime.value=m.time||'19:00';notifMonthlyDay.value=String(m.day||1);toggleNotifCard('fuel');toggleNotifCard('price');toggleNotifCard('monthly');renderPrediction()}
 function saveNotificationSettings(){db.notifications={fuel:{enabled:notifFuel.checked,time:notifFuelTime.value||'08:00',thresholdKm:+notifFuelThreshold.value||30,vehicleId:notifFuelVehicle.value||db.activeId,mode:'smart'},price:{enabled:notifPrice.checked,time:notifPriceTime.value||'08:00',freq:notifPriceFreq.value||'weekly'},monthly:{enabled:notifMonthly.checked,time:notifMonthlyTime.value||'19:00',day:+notifMonthlyDay.value||1}};persist();if(window.Android&&Android.applyNotificationSettings){try{Android.applyNotificationSettings(JSON.stringify(db.notifications))}catch(e){}}closeModal('notifModal');toast('Pengingat pintar BBM disimpan')}
-function openOdoUpdate(){odoVehicle.innerHTML=db.vehicles.map(v=>`<option value="${v.id}">${esc(v.nick)} — ${esc(v.model)}</option>`).join('');odoVehicle.value=notifFuelVehicle.value||db.activeId||'';odoNow.value='';odoDate.value=new Date().toISOString().slice(0,10);document.getElementById('odoModal').classList.add('show')}
-function saveOdoUpdate(){const v=db.vehicles.find(x=>x.id===odoVehicle.value);const val=+odoNow.value;if(!v||!val){toast('Pilih kendaraan dan isi odometer');return}v.odoUpdates=v.odoUpdates||[];v.odoUpdates.push({id:Date.now(),date:odoDate.value||new Date().toISOString().slice(0,10),odo:val});closeModal('odoModal');persist();if(document.getElementById('notifModal').classList.contains('show'))renderPrediction();toast('Odometer diperbarui')}
+function openOdoUpdate(){
+
+  odoVehicle.innerHTML=db.vehicles.map(v=>
+    `<option value="${v.id}">${esc(v.nick)} — ${esc(v.model)}</option>`
+  ).join('');
+
+  odoVehicle.value=
+    notifFuelVehicle.value ||
+    db.activeId ||
+    db.vehicles[0]?.id ||
+    '';
+
+  odoEditId.value='';
+  odoNow.value='';
+  odoDate.value=new Date().toISOString().slice(0,10);
+
+  document.getElementById('odoSaveBtn').textContent='Simpan odometer';
+
+  renderOdoUpdates();
+
+  document.getElementById('odoModal').classList.add('show');
+}
+
+
+function renderOdoUpdates(){
+
+  const v=db.vehicles.find(x=>x.id===odoVehicle.value);
+  const box=document.getElementById('odoUpdateList');
+
+  if(!v){
+    box.innerHTML='<div class="empty">Belum ada kendaraan.</div>';
+    return;
+  }
+
+  const list=[...(v.odoUpdates||[])].sort((a,b)=>
+    new Date(b.date)-new Date(a.date) || (+b.id)-(+a.id)
+  );
+
+  if(!list.length){
+    box.innerHTML=
+      '<div class="miniCard"><span>Belum ada update odometer manual.</span></div>';
+    return;
+  }
+
+  box.innerHTML=list.map(x=>`
+
+    <div class="miniCard" style="margin-bottom:10px">
+
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+
+        <div>
+          <b>${fmt(x.odo)} km</b>
+          <span>
+            ${new Date(x.date+'T00:00:00').toLocaleDateString(
+              'id-ID',
+              {day:'numeric',month:'long',year:'numeric'}
+            )}
+          </span>
+        </div>
+
+        <div class="rowActions" style="margin-top:0">
+
+          <button
+            class="miniBtn"
+            onclick="editOdoUpdate('${x.id}')">
+            Edit
+          </button>
+
+          <button
+            class="miniBtn danger"
+            onclick="deleteOdoUpdate('${x.id}')">
+            Hapus
+          </button>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  `).join('');
+}
+
+
+function editOdoUpdate(id){
+
+  const v=db.vehicles.find(x=>x.id===odoVehicle.value);
+  if(!v)return;
+
+  const item=(v.odoUpdates||[])
+    .find(x=>String(x.id)===String(id));
+
+  if(!item)return;
+
+  odoEditId.value=item.id;
+  odoNow.value=item.odo;
+  odoDate.value=item.date;
+
+  document.getElementById('odoSaveBtn').textContent='Simpan perubahan';
+
+  odoNow.focus();
+}
+
+
+function deleteOdoUpdate(id){
+
+  const v=db.vehicles.find(x=>x.id===odoVehicle.value);
+  if(!v)return;
+
+  const item=(v.odoUpdates||[])
+    .find(x=>String(x.id)===String(id));
+
+  if(!item)return;
+
+  if(!confirm(`Hapus update odometer ${fmt(item.odo)} km?`))return;
+
+  v.odoUpdates=(v.odoUpdates||[])
+    .filter(x=>String(x.id)!==String(id));
+
+  odoEditId.value='';
+  odoNow.value='';
+  odoDate.value=new Date().toISOString().slice(0,10);
+
+  document.getElementById('odoSaveBtn').textContent='Simpan odometer';
+
+  persist();
+
+  renderOdoUpdates();
+
+  if(document.getElementById('notifModal').classList.contains('show')){
+    renderPrediction();
+  }
+
+  toast('Update odometer dihapus');
+}
+
+
+function saveOdoUpdate(){
+
+  const v=db.vehicles.find(x=>x.id===odoVehicle.value);
+  const val=+odoNow.value;
+  const editId=odoEditId.value;
+
+  if(!v || !val){
+    toast('Pilih kendaraan dan isi odometer');
+    return;
+  }
+
+  v.odoUpdates=v.odoUpdates||[];
+
+  if(editId){
+
+    const item=v.odoUpdates
+      .find(x=>String(x.id)===String(editId));
+
+    if(item){
+      item.odo=val;
+      item.date=odoDate.value || new Date().toISOString().slice(0,10);
+    }
+
+  }else{
+
+    v.odoUpdates.push({
+      id:Date.now(),
+      date:odoDate.value || new Date().toISOString().slice(0,10),
+      odo:val
+    });
+
+  }
+
+  persist();
+
+  odoEditId.value='';
+  odoNow.value='';
+  odoDate.value=new Date().toISOString().slice(0,10);
+
+  document.getElementById('odoSaveBtn').textContent='Simpan odometer';
+
+  renderOdoUpdates();
+
+  if(document.getElementById('notifModal').classList.contains('show')){
+    renderPrediction();
+  }
+
+  toast(editId ? 'Odometer diperbarui' : 'Odometer tersimpan');
+}
 function openProfile(){const p=db.profile||{}; profileName.value=p.name||""; profileRegion.value=db.region||"Jawa Timur"; profileNote.value=p.note||""; document.getElementById('profileModal').classList.add('show')}
 function saveProfile(){db.profile=db.profile||{}; db.profile.name=(profileName.value||'').trim(); db.profile.note=(profileNote.value||'').trim(); db.region=(profileRegion.value||db.region||'Jawa Timur').trim(); closeModal('profileModal'); persist(); toast('Profil disimpan')}
 function saveManualPrice(){const v=active();if(!v){toast('Belum ada kendaraan');return}v.price=+manualPrice.value||v.price;v.priceUpdated=new Date().toISOString();db.region=(region.value||'Jawa Timur').trim();persist();toast('Harga BBM disimpan')}
